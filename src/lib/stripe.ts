@@ -3,11 +3,20 @@ import Stripe from "stripe"
 import { subscriptionPlans } from "./subscription-plans"
 
 const prisma = new PrismaClient()
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-12-18.acacia",
-})
+let stripeClient: Stripe | null = null
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY is not set")
+  }
+  if (!stripeClient) {
+    stripeClient = new Stripe(key, { apiVersion: "2024-12-18.acacia" })
+  }
+  return stripeClient
+}
 
 export async function createStripeCustomer(email: string, name?: string) {
+  const stripe = getStripe()
   const customer = await stripe.customers.create({
     email,
     name,
@@ -25,6 +34,7 @@ export async function createSubscription(userId: string, priceId: string) {
     throw new Error("User not found")
   }
 
+  const stripe = getStripe()
   // Create or get Stripe customer
   let stripeCustomer
   if (user.customerId) {
@@ -95,6 +105,7 @@ export async function cancelSubscription(userId: string) {
     throw new Error("No active subscription found")
   }
 
+  const stripe = getStripe()
   // Cancel subscription in Stripe
   await stripe.subscriptions.update(user.subscription.stripeSubscriptionId, {
     cancel_at_period_end: true,
@@ -119,6 +130,7 @@ export async function reactivateSubscription(userId: string) {
     throw new Error("No subscription found")
   }
 
+  const stripe = getStripe()
   // Reactivate subscription in Stripe
   await stripe.subscriptions.update(user.subscription.stripeSubscriptionId, {
     cancel_at_period_end: false,
@@ -143,6 +155,7 @@ export async function updateSubscription(userId: string, newPriceId: string) {
     throw new Error("No active subscription found")
   }
 
+  const stripe = getStripe()
   // Get current subscription
   const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId)
 
