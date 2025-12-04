@@ -1,0 +1,457 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User Model with enhanced fields
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  password      String?
+  image         String?
+  emailVerified DateTime?
+  role          UserRole @default(USER)
+  status        UserStatus @default(ACTIVE)
+  
+  // Subscription fields
+  subscription  Subscription?
+  customerId    String?  // Stripe customer ID
+  
+  // Team fields
+  teamMembers   TeamMember[]
+  ownedTeams    Team[]   @relation("TeamOwner")
+  
+  // API Keys
+  apiKeys       ApiKey[]
+  
+  // Usage tracking
+  usage         Usage[]
+  
+  // Audit logs
+  auditLogs     AuditLog[]
+  
+  // Notifications
+  notifications Notification[]
+  
+  // Profile
+  profile       Profile?
+  
+  // Data exports
+  dataExports   DataExport[]
+  
+  // White-label settings
+  whiteLabel    WhiteLabel?
+  
+  // Trading integrations
+  tradingIntegrations TradingIntegration[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("users")
+}
+
+// Profile Model
+model Profile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  company     String?
+  phone       String?
+  address     String?
+  country     String?
+  timezone    String   @default("UTC")
+  language    String   @default("en")
+  bio         String?
+  website     String?
+  socialLinks Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+// Subscription Plans
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PENDING
+  TRIAL
+}
+
+// Subscription Model
+model Subscription {
+  id          String              @id @default(cuid())
+  userId      String              @unique
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  plan        SubscriptionPlan    @default(FREE)
+  status      SubscriptionStatus  @default(TRIAL)
+  
+  // Stripe fields
+  stripeSubscriptionId String?
+  stripePriceId       String?
+  stripeCurrentPeriodEnd DateTime?
+  
+  // Billing
+  billingCycle        String   @default("monthly") // monthly, yearly
+  amount              Int      // in cents
+  currency            String   @default("usd")
+  
+  // Usage limits
+  apiCallsLimit       Int      @default(1000)
+  apiCallsUsed        Int      @default(0)
+  predictionsLimit    Int      @default(50)
+  predictionsUsed     Int      @default(0)
+  teamMembersLimit    Int      @default(1)
+  teamMembersUsed     Int      @default(0)
+  
+  // Trial
+  trialEndsAt         DateTime?
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
+// Team Model
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // Members
+  members     TeamMember[]
+  
+  // Settings
+  settings    Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("teams")
+}
+
+// Team Member Model
+model TeamMember {
+  id          String      @id @default(cuid())
+  teamId      String
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role        TeamRole    @default(MEMBER)
+  status      MemberStatus @default(ACTIVE)
+  joinedAt    DateTime    @default(now())
+  
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+// API Key Model
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  key         String   @unique
+  description String?
+  
+  // Permissions
+  permissions Json?
+  
+  // Rate limiting
+  rateLimit   Int      @default(1000) // requests per minute
+  burstLimit  Int      @default(100)  // burst requests
+  
+  // Usage tracking
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+  
+  // Status
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("api_keys")
+}
+
+// Usage Tracking Model
+model Usage {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        UsageType
+  amount      Int      @default(1)
+  metadata    Json?
+  
+  date        DateTime @default(now())
+  
+  @@map("usage")
+}
+
+enum UsageType {
+  API_CALL
+  PREDICTION
+  DATA_EXPORT
+  NOTIFICATION
+  TEAM_INVITE
+}
+
+// Audit Log Model
+model AuditLog {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  action      String
+  resource    String?
+  resourceId  String?
+  metadata    Json?
+  
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime     @default(now())
+
+  @@map("audit_logs")
+}
+
+// Notification Model
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        NotificationType
+  title       String
+  message     String
+  metadata    Json?
+  
+  isRead      Boolean          @default(false)
+  isReadAt    DateTime?
+  
+  createdAt   DateTime         @default(now())
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+  BILLING
+  SECURITY
+  TEAM
+  API
+}
+
+// Data Export Model
+model DataExport {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        ExportType
+  format      ExportFormat
+  status      ExportStatus  @default(PENDING)
+  
+  filename    String?
+  filePath    String?
+  fileSize    Int?
+  
+  metadata    Json?
+  error       String?
+  
+  createdAt   DateTime      @default(now())
+  completedAt DateTime?
+  
+  @@map("data_exports")
+}
+
+enum ExportType {
+  PREDICTIONS
+  USAGE
+  AUDIT_LOGS
+  TEAM_DATA
+  BILLING
+  ANALYTICS
+}
+
+enum ExportFormat {
+  CSV
+  JSON
+  XML
+  EXCEL
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// White Label Model
+model WhiteLabel {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  companyName String?
+  logo        String?
+  favicon     String?
+  
+  // Colors
+  primaryColor    String?
+  secondaryColor  String?
+  accentColor     String?
+  
+  // Custom domain
+  customDomain    String?
+  isDomainVerified Boolean @default(false)
+  
+  // Branding
+  customCSS       String?
+  customJS        String?
+  
+  // Settings
+  hideBranding    Boolean @default(false)
+  customFooter    String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("white_labels")
+}
+
+// Partnership Model
+model Partnership {
+  id          String           @id @default(cuid())
+  name        String
+  type        PartnershipType
+  status      PartnershipStatus @default(PENDING)
+  
+  // Configuration
+  config      Json?
+  
+  // Revenue sharing
+  revenueShare Float           @default(0.0)
+  
+  // Contact info
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("partnerships")
+}
+
+enum PartnershipType {
+  BROKERAGE
+  MEDIA
+  DATA_PROVIDER
+  TRADING_PLATFORM
+}
+
+enum PartnershipStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+// Trading Integration Model
+model TradingIntegration {
+  id          String               @id @default(cuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  broker      String
+  apiKey      String?
+  apiSecret   String?
+  
+  // Configuration
+  config      Json?
+  
+  // Status
+  isActive    Boolean              @default(true)
+  lastSyncAt  DateTime?
+  
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@map("trading_integrations")
+}
+
+// User Roles
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+// User Status
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+}
+
+// API Key Rate Limit Model
+model ApiKeyRateLimit {
+  id        String   @id @default(cuid())
+  key       String
+  timestamp DateTime @default(now())
+  
+  @@index([key, timestamp])
+  @@map("api_key_rate_limits")
+}
